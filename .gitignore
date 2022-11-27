@@ -1,4 +1,4 @@
 *.pkl
-*.dict
+lsi-dictionary.dict
 __pycache__
 venv
