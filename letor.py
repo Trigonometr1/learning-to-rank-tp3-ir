@@ -4,31 +4,54 @@ import lightgbm as lgb
 import numpy as np
 import pickle
 
-from gensim.models import TfidfModel
 from gensim.models import LsiModel
 from gensim.corpora import Dictionary
 from scipy.spatial.distance import cosine
 from tqdm import tqdm
 
 class LETOR:
-    def __init__(self, docs_dir, qrels_dir, query_dir, num_latent_topics, model_dir):
+    """
+    Attributes
+    ----------
+    docs_dir(str): Menyimpan direktori untuk kumpulan dokumen yang akan di train
+    qrels_dir(str): Menyimpan direktori untuk kumpulan qrel yang akan di train
+    query_dir(str): Menyimpan direktori untuk kumpulan query yang akan di train
+    NUM_LATENT_TOPICS(int): Jumlah fitur yang akan digunakan di model.
+                            Sebaiknya diset menjadi <= jumlah fitur awal
+    model_dir(str): Menyimpan direktori untuk model hasil train
+    lambdarank_model(LGBMRanker): Model LambdaMART
+    dictionary(gensim.corpora.Dictionary): Menyimpan pengaturan doc2bow.
+    lsi_model(LsiModel): Untuk mengambil representasi vektor dari dokumen
+    """
+    def __init__(self, docs_dir, qrels_dir, query_dir, num_latent_topics, model_dir, param_grid):
         self.docs_dir = docs_dir
         self.qrels_dir = qrels_dir
         self.query_dir = query_dir
         self.NUM_LATENT_TOPICS = num_latent_topics
         self.model_dir = model_dir
         self.lambdarank_model = lgb.LGBMRanker(
-                                    objective="lambdarank",
-                                    boosting_type = "gbdt",
-                                    n_estimators = 100,
-                                    importance_type = "gain",
-                                    metric = "ndcg",
-                                    num_leaves = 40,
-                                    learning_rate = 0.02,
-                                    max_depth = -1)
+                    objective="lambdarank",
+                    boosting_type = "gbdt",
+                    n_estimators = 100,
+                    importance_type = "gain",
+                    metric = "ndcg",
+                    num_leaves = 40,
+                    learning_rate = 0.02,
+                    max_depth = -1)
     
     def prepare_data(self):
-        """Membuat dataset dengan format yang dapat diterima LightGBM LambdaRank"""
+        """
+        Membuat dataset dengan format yang dapat diterima LightGBM LambdaRank
+            Returns
+            -------
+            documents : Dict
+                Python dictionary berisikan key (doc_id) dan value (konten di dokumen)
+            group_qid_count : List[int]
+                Dibutuhkan untuk parameter LambdaMART. Isinya adalah berapa banyak
+                pasangan query-rel untuk satu query_id.
+            dataset : List[Tuple[str, str, int]]
+                format dataset: [(query_text, document_text, relevance), ...]
+        """
         NUM_NEGATIVES = 1
 
         docs_file_path = os.path.join(self.docs_dir, 'train.docs')
@@ -73,6 +96,25 @@ class LETOR:
         return documents, group_qid_count, dataset
 
     def features(self, query, doc, model, dictionary):
+        """
+        Mengubah pasangan query-doc menjadi vektor numerik dense.
+        Informasi tambahan berupa cosine similarity dan jaccard (opsional).
+        Fungsi ini digunakan juga untuk mengubah data yang akan diprediksi (unseen data)
+            Parameters
+            ----------
+            query : List[str]
+                Python list berisikan potongan token di query
+            doc : List[str]
+                Python list berisikan potongan token di dokumen
+            model : LsiModel
+                model LSI yang sudah di build dengan fungsi build_lsi
+            dictionary : gensim.corpora.Dictionary
+                Dictionary doc2bow yang sudah di build dengan fungsi build_lsi
+
+            Returns
+            -------
+            Python List berisikan representasi vektor pasangan query-doc
+        """
         def vector_rep(text, model=model, dictionary=dictionary):
             rep = [topic_value for (_, topic_value) in self.lsi_model[self.dictionary.doc2bow(text)]]
             return rep if len(rep) == self.NUM_LATENT_TOPICS else [0.] * self.NUM_LATENT_TOPICS
@@ -86,6 +128,20 @@ class LETOR:
         return v_q + v_d + [jaccard] + [cosine_dist]
 
     def build_lsi(self, documents):
+        """
+        Membuat model LSI yang menyimpan informasi seputar representasi vektor dari query-doc
+            Parameters
+            ----------
+            documents : Dict
+                Python dictionary berisikan key (doc_id) dan value (konten di dokumen)
+
+            Returns
+            -------
+            model : LsiModel
+                model LSI yang sudah di build
+            dictionary : gensim.corpora.Dictionary
+                Dictionary doc2bow yang sudah di build
+        """
         self.dictionary = Dictionary()
         print("Changing to Bag-of-Words format...")
         bow_corpus = [self.dictionary.doc2bow(doc, allow_update = True) for doc in tqdm(documents.values())]
@@ -94,6 +150,22 @@ class LETOR:
         return self.dictionary, self.lsi_model
     
     def create_feature(self, dataset, model, dictionary):
+        """
+        Mengubah dataset ke format yang dapat diterima LamdbdaMART
+            Parameters
+            ----------
+            dataset : List
+                list berisikan tuple berformat (query, doc, relevance)
+            model : LsiModel
+                model LSI yang sudah di build dengan fungsi build_lsi
+            dictionary : gensim.corpora.Dictionary
+                Dictionary doc2bow yang sudah di build dengan fungsi build_lsi
+
+            Returns
+            -------
+            X, Y : numpy.array
+                X berisi vektor representasi query-doc , Y berisi level relevance
+        """
         X = []
         Y = []
         print("Creating features for LambdaRank...")
@@ -108,6 +180,19 @@ class LETOR:
         return X, Y
 
     def train_lambdarank(self, X, Y, group_qid_count):
+        """
+        Melakukan train model LamdbdaMART
+            Parameters
+            ----------
+            X, Y : numpy.array
+                X berisi vektor representasi query-doc , Y berisi level relevance
+            group_qid_count : List[int]
+                dihasilkan dari metode prepare_data
+
+            Returns
+            -------
+            model LambdaMART yang sudah dilatih
+        """
         self.lambdarank_model.fit(X, Y,
                 group = group_qid_count,
                 verbose = 10)
@@ -149,12 +234,13 @@ if __name__ == "__main__":
 
     dictionary, lsi_model = letor.build_lsi(documents)
 
-    # X, Y = letor.create_feature(dataset, lsi_model, dictionary)
-    # print(X.shape)
-    # print(Y.shape)
+    X, Y = letor.create_feature(dataset, lsi_model, dictionary)
+    print(X.shape)
+    print(Y.shape)
 
-    # lambdarank_model = letor.train_lambdarank(X, Y, group_qid_count)
+    lambdarank_model = letor.train_lambdarank(X, Y, group_qid_count)
 
+    # cek apakah model sudah dapat memprediksi
     query = "how much cancer risk can be avoided through lifestyle change ?"
 
     docs =[("D1", "dietary restriction reduces insulin-like growth factor levels modulates apoptosis cell proliferation tumor progression num defici pubmed ncbi abstract diet contributes one-third cancer deaths western world factors diet influence cancer elucidated reduction caloric intake dramatically slows cancer progression rodents major contribution dietary effects cancer insulin-like growth factor igf-i lowered dietary restriction dr humans rats igf-i modulates cell proliferation apoptosis tumorigenesis mechanisms protective effects dr depend reduction multifaceted growth factor test hypothesis igf-i restored dr ascertain lowering igf-i central slowing bladder cancer progression dr heterozygous num deficient mice received bladder carcinogen p-cresidine induce preneoplasia confirmation bladder urothelial preneoplasia mice divided groups ad libitum num dr num dr igf-i igf-i/dr serum igf-i lowered num dr completely restored igf-i/dr-treated mice recombinant igf-i administered osmotic minipumps tumor progression decreased dr restoration igf-i serum levels dr-treated mice increased stage cancers igf-i modulated tumor progression independent body weight rates apoptosis preneoplastic lesions num times higher dr-treated mice compared igf/dr ad libitum-treated mice administration igf-i dr-treated mice stimulated cell proliferation num fold hyperplastic foci conclusion dr lowered igf-i levels favoring apoptosis cell proliferation ultimately slowing tumor progression mechanistic study demonstrating igf-i supplementation abrogates protective effect dr neoplastic progression"), 
@@ -167,6 +253,16 @@ if __name__ == "__main__":
     for doc_id, doc in docs:
         X_unseen.append(letor.features(query.split(), doc.split(), lsi_model, dictionary))
 
+    X_unseen = np.array(X_unseen)
+    scores = letor.lambdarank_model.predict(X_unseen)
+    did_scores = [x for x in zip([did for (did, _) in docs], scores)]
+    sorted_did_scores = sorted(did_scores, key = lambda tup: tup[1], reverse = True)
+
+    print("query        :", query)
+    print("SERP/Ranking :")
+    for (did, score) in sorted_did_scores:
+        print(did, score)
+
+    # jika sudah, simpan modelnya untuk memprediksi
     letor.save_lsi()
-    # X_unseen = np.array(X_unseen)
-    #letor.save_lambdarank()
+    letor.save_lambdarank()

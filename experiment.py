@@ -2,6 +2,8 @@ import re
 import math
 from bsbi import BSBIIndex
 from compression import VBEPostings
+from util import text_preprocess
+from letor import LETOR
 
 ######## >>>>> 3 IR metrics: RBP p = 0.8, DCG, dan AP
 
@@ -109,15 +111,17 @@ def load_qrels(qrel_file = "qrels.txt", max_q_id = 30, max_doc_id = 1033):
 
 ######## >>>>> EVALUASI !
 
-def eval(qrels, query_file = "queries.txt", k = 1000):
+def eval(qrels, query_file = "queries.txt", k = 100, reranking = True):
   """ 
     loop ke semua 30 query, hitung score di setiap query,
     lalu hitung MEAN SCORE over those 30 queries.
-    untuk setiap query, kembalikan top-1000 documents
+    untuk setiap query, kembalikan top-100 documents
   """
   BSBI_instance = BSBIIndex(data_dir = 'collection', \
                           postings_encoding = VBEPostings, \
                           output_dir = 'index')
+
+  dict_query_docs = dict()
 
   with open(query_file) as file:
     rbp_scores = []
@@ -127,26 +131,61 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
       parts = qline.strip().split()
       qid = parts[0]
       query = " ".join(parts[1:])
+      dict_query_docs[qid] = dict()
 
       # HATI-HATI, doc id saat indexing bisa jadi berbeda dengan doc id
       # yang tertera di qrels
       ranking = []
-      # jika ingin TF-IDF
-      # for (doc, score) in BSBI_instance.retrieve_tfidf(query, k = k):
-      # jika ingin BM25
       for (doc, score) in BSBI_instance.retrieve_bm25(query, k = k, k1 = 2, b = 0.75):
           did = int(re.search(r'.*\\.*\\(.*)\.txt', doc).group(1))
+          if reranking:
+            with open(doc, encoding="utf-8") as collection_file:
+              dict_query_docs[qid][did] = text_preprocess(collection_file.read())
           ranking.append(qrels[qid][did])
       rbp_scores.append(rbp(ranking))
       dcg_scores.append(dcg(ranking))
       ap_scores.append(ap(ranking))
-  # jika ingin TF-IDF
-  # print("Hasil evaluasi TF-IDF terhadap 30 queries")
-  # jika ingin BM25
   print("Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries")
   print("RBP score =", sum(rbp_scores) / len(rbp_scores))
   print("DCG score =", sum(dcg_scores) / len(dcg_scores))
   print("AP score  =", sum(ap_scores) / len(ap_scores))
+
+  if reranking:
+    letor_instance = LETOR(docs_dir = "data-train-letor/train", 
+                  qrels_dir = "data-train-letor/qrels",
+                  query_dir = "data-train-letor/query",
+                  num_latent_topics = 200,
+                  model_dir = "data-train-letor\\model")
+    
+    letor_instance.load_lsi()
+    letor_instance.load_lambdarank()
+
+    rbp_scores = []
+    dcg_scores = []
+    ap_scores = []
+
+    for qid, documents in dict_query_docs.items():
+      unseen_data = []
+      ranking = []
+      for did, doc in documents.items():
+        unseen_data.append(letor_instance.features(query.split(), doc, 
+                                              letor_instance.lsi_model,
+                                              letor_instance.dictionary))
+        
+    
+      scores = letor_instance.lambdarank_model.predict(unseen_data)
+      did_scores = [x for x in zip([did for (did, _) in documents.items()], scores)]
+      sorted_did_scores = sorted(did_scores, key = lambda tup: tup[1], reverse = True)
+
+      ranking.extend([qrels[qid][did] for (did, _) in sorted_did_scores])
+      rbp_scores.append(rbp(ranking))
+      dcg_scores.append(dcg(ranking))
+      ap_scores.append(ap(ranking))
+
+    print("Hasil evaluasi reranking terhadap 30 queries")
+    print("RBP score =", sum(rbp_scores) / len(rbp_scores))
+    print("DCG score =", sum(dcg_scores) / len(dcg_scores))
+    print("AP score  =", sum(ap_scores) / len(ap_scores))
   
 
 if __name__ == '__main__':

@@ -1,0 +1,59 @@
+Hyperparameter configuration:
+LGBMRanker(objective="lambdarank",
+            boosting_type = "gbdt",
+            n_estimators = 100,
+            importance_type = "gain",
+            metric = "ndcg",
+            num_leaves = 40,
+            learning_rate = 0.02,
+            max_depth = -1)
+
+Hasil menjalankan experiment.py
+
+Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries
+RBP score = 0.46313352463698754
+DCG score = 3.0890051281217508
+AP score  = 0.50589445897614
+Hasil evaluasi reranking terhadap 30 queries
+RBP score = 0.11070568965455088
+DCG score = 1.9340117040038551
+AP score  = 0.1792696030926693
+
+*******************************************
+Hyperparameter configuration:
+LGBMRanker(objective="lambdarank",
+            boosting_type = "gbdt",
+            n_estimators = 100,
+            importance_type = "gain",
+            metric = "average_precision",
+            num_leaves = 64,
+            learning_rate = 0.05,
+            max_depth = -1,
+            min_child_samples = 13)
+
+Hasil menjalankan experiment.py:
+
+Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries
+RBP score = 0.46313352463698754
+DCG score = 3.0890051281217508
+AP score  = 0.50589445897614
+Hasil evaluasi reranking terhadap 30 queries
+RBP score = 0.11468316782505217
+DCG score = 1.9301751006180268
+AP score  = 0.1743331344872282
+
+*******************************************
+
+Hasil eksperimen menunjukkan hasil rerank yang kurang akurat dibandingkan
+menggunakan BM25 saja. Hal ini bisa jadi karena pengaruh beberapa faktor:
+1. Data training dan data collection yang kurang serasi. Walaupun memiliki
+domain yang sama, bisa jadi distribusi subdomain yang ada cukup berbeda jauh
+atau sedikit sekali beririsannya.
+2. Preprocess data collection dan data training yang berbeda. Ketika diretrieve,
+data collection dan query yang terasosiasi akan dilakukan preprocess dulu.
+Namun, data training tidak dilakukan preprocess apapun untuk semua pasangan query-doc.
+Hal ini mengakibatkan proses mengubah query-doc menjadi vektor ketika di experiment.py
+menjadi kurang akurat karena LSI model masih menggunakan data dari training sebagai basis.
+3. Kurang mencoba konfigurasi hyperparameter lainnya. Bisa jadi untuk suatu konfigurasi
+tertentu, hasil yang diberikan dapat lebih baik. Namun, hal ini butuh waktu komputasi
+yang lebih lama. 
