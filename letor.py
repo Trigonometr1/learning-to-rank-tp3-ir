@@ -23,7 +23,7 @@ class LETOR:
     dictionary(gensim.corpora.Dictionary): Menyimpan pengaturan doc2bow.
     lsi_model(LsiModel): Untuk mengambil representasi vektor dari dokumen
     """
-    def __init__(self, docs_dir, qrels_dir, query_dir, num_latent_topics, model_dir, param_grid):
+    def __init__(self, docs_dir, qrels_dir, query_dir, num_latent_topics, model_dir):
         self.docs_dir = docs_dir
         self.qrels_dir = qrels_dir
         self.query_dir = query_dir
