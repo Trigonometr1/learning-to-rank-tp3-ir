@@ -1,0 +1,4 @@
+*.pkl
+*.dict
+__pycache__
+venv
