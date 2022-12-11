@@ -88,8 +88,8 @@ class BSBIIndex:
         dir_path = os.path.join(self.data_dir, block_dir_relative)
         td_pairs = []
 
-        for filename in glob.glob(dir_path + "\*.txt"):
-            with open(filename, 'r') as f:
+        for filename in os.listdir(dir_path):
+            with open(os.path.join(dir_path, filename), 'r') as f:
                 string = f.read()
                 tokens = text_preprocess(string)
 

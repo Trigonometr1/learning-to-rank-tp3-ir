@@ -1,59 +1,124 @@
-Hyperparameter configuration:
-LGBMRanker(objective="lambdarank",
-            boosting_type = "gbdt",
-            n_estimators = 100,
-            importance_type = "gain",
-            metric = "ndcg",
-            num_leaves = 40,
-            learning_rate = 0.02,
-            max_depth = -1)
+1. PENJELASAN MODEL
+Saya menggunakan model BioClinicalBERT menggunakan task NER dan natural language inference sebagai task pre-trained nya.
+Kemudian, saya sesuaikan modelnya dengan menambahkan layer Dense sebagai bentuk klasifikasi dari dataset Medline yang punya
+tiga kelas pada qrels-nya. Selain itu, saya juga melakukan fine-tuning pada learning rate menjadi 1e-4. Jadi, pada tahap fine-
+tuning terdapat parameter dari BioClinicalBERT dan layer Dense yang perlu saya train. Karena jumlah parameter yang saya latih
+sangat banyak, saya membagi data saya menjadi batch berukuran enam data per batch. Hal ini juga untuk menghindari OOM (Out Of
+Memory) ketika semua data diamsukkan langsung ke model.
 
-Hasil menjalankan experiment.py
+2. PENJELASAN DATASET
+Saya tetap menggunakan dataset nfcorpus Medline dari TP3 untuk data trainnya. Perbedaan pada TP 3 ada pada persebaran data yang
+dilatih jadi lebih banyak karena saya menggunakan file train.{vid-titles,vid-desc,nontopic-titles}.queries ketimbang hanya
+vid-desc saja. Kemudian, saya gabungkan semua query tersebut menjadi satu query panjang agar model dapat lebih memahami bentuk
+query yang lebih beragam. Akhirnya, setelah dimapping ke qrels untuk training, saya mendapat dataset sebesar ~37000 pasangan
+query document.
 
-Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries
-RBP score = 0.46313352463698754
-DCG score = 3.0890051281217508
-AP score  = 0.50589445897614
-Hasil evaluasi reranking terhadap 30 queries
-RBP score = 0.11070568965455088
-DCG score = 1.9340117040038551
-AP score  = 0.1792696030926693
+3. ANALISIS HASIL
+Tabel di bawah merupakan ringkasan dari semua eksperimen yang dijalankan. Terlihat bahwa hasil yang diberikan oleh BM25 dan
+BioClinicalBERT benar-benar sama persis yang bermakna model BioClinicalBERT tidak perlu melakukan reranking dari hasil retrieve
+BM25. Jika ingin dilihat lebih ilmiah, hal ini berarti hasil kelas prediksi yang diberikan BioClinicalBERT adalah sama untuk
+semua pasangan query document pada setiap hasil retrieve. Perilaku BioClinicalBERT tersebut dapat mengindikasikan hasil retrieve
+yang baik karena hasil retrieve dari BM25 yang ternyata sudah "setipe" semua menurut BioClinicalBERT sehingga tidak perlu ada
+koreksi lagi dari BioClinicalBERT.
 
-*******************************************
-Hyperparameter configuration:
-LGBMRanker(objective="lambdarank",
-            boosting_type = "gbdt",
-            n_estimators = 100,
-            importance_type = "gain",
-            metric = "average_precision",
-            num_leaves = 64,
-            learning_rate = 0.05,
-            max_depth = -1,
-            min_child_samples = 13)
+Perbedaan hasil antara BioClinicalBERT dan LAMBDARank terlihat jelas karena arsitektur BioClinicalBERT yang
+lebih modern (attention is all you need) serta membutuhkan komputasi yang sangat lebih besar daripada
+LAMBDARank. Selain itu, task pelatihan BioClinicalBERT lebih terstruktur dan berusaha memahami konteks
+kalimat (Next Sentence Prediction, Masked Language Model, dan Natural Language Inference serta NER) daripada
+LAMBDARank yang hanya mempelajari data dan minimalkan loss functionnya dengan gradient boosting.
 
-Hasil menjalankan experiment.py:
 
-Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries
-RBP score = 0.46313352463698754
-DCG score = 3.0890051281217508
-AP score  = 0.50589445897614
-Hasil evaluasi reranking terhadap 30 queries
-RBP score = 0.11468316782505217
-DCG score = 1.9301751006180268
-AP score  = 0.1743331344872282
-
-*******************************************
-
-Hasil eksperimen menunjukkan hasil rerank yang kurang akurat dibandingkan
-menggunakan BM25 saja. Hal ini bisa jadi karena pengaruh beberapa faktor:
-1. Data training dan data collection yang kurang serasi. Walaupun memiliki
-domain yang sama, bisa jadi distribusi subdomain yang ada cukup berbeda jauh
-atau sedikit sekali beririsannya.
-2. Preprocess data collection dan data training yang berbeda. Ketika diretrieve,
-data collection dan query yang terasosiasi akan dilakukan preprocess dulu.
-Namun, data training tidak dilakukan preprocess apapun untuk semua pasangan query-doc.
-Hal ini mengakibatkan proses mengubah query-doc menjadi vektor ketika di experiment.py
-menjadi kurang akurat karena LSI model masih menggunakan data dari training sebagai basis.
-3. Kurang mencoba konfigurasi hyperparameter lainnya. Bisa jadi untuk suatu konfigurasi
-tertentu, hasil yang diberikan dapat lebih baik. Namun, hal ini butuh waktu komputasi
-yang lebih lama. 
+TABEL HASIL EVALUASI
+Perhatikan bahwa reranking yang dilakukan LAMBDARank dan BioClinicalBERT masing-masing berasal dari BM25,
+bukan dari LAMBDARank lalu direrank lagi dengan BioClinicalBERT.
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 5) terhadap 30 queries
+RBP score = 0.3575786666666666
+DCG score = 1.583826249345555
+AP score  = 0.6806944444444445
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.3695786666666666
+DCG score = 1.6373999406550759
+AP score  = 0.6891666666666668
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.3575786666666666
+DCG score = 1.583826249345555
+AP score  = 0.6806944444444445
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 10) terhadap 30 queries
+RBP score = 0.4213984972800001
+DCG score = 2.0179717759990576
+AP score  = 0.6431168430335098
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.36392877056
+DCG score = 1.8260008555806213
+AP score  = 0.5295723838918284
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.4213984972800001
+DCG score = 2.0179717759990576
+AP score  = 0.6431168430335098
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 50) terhadap 30 queries
+RBP score = 0.4416710196150325
+DCG score = 2.8012324128494015
+AP score  = 0.5162565797421899
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.16512200710051944
+DCG score = 1.9544040193535863
+AP score  = 0.24060644959904467
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.4416710196150325
+DCG score = 2.8012324128494015
+AP score  = 0.5162565797421899
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 100) terhadap 30 queries
+RBP score = 0.44167130187927167
+DCG score = 2.963526452253798
+AP score  = 0.4824332968670388
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.12139327106952275
+DCG score = 1.9463588334939947
+AP score  = 0.18010914713644868
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.44167130187927167
+DCG score = 2.963526452253798
+AP score  = 0.4824332968670388
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 500) terhadap 30 queries
+RBP score = 0.4416713018796457
+DCG score = 2.991795411969586
+AP score  = 0.4769026681312379
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.11013360507400256
+DCG score = 1.8620103317823455
+AP score  = 0.15779714995070768
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.4416713018796457
+DCG score = 2.991795411969586
+AP score  = 0.4769026681312379
+##########################################################################################
+Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = 1000) terhadap 30 queries
+RBP score = 0.4416713018796457
+DCG score = 2.991795411969586
+AP score  = 0.4769026681312379
+*****************************************************************
+Hasil evaluasi reranking dengan LAMBDARank
+RBP score = 0.11013360507400256
+DCG score = 1.8620103317823455
+AP score  = 0.15779714995070768
+*****************************************************************
+Hasil evaluasi reranking dengan BioClinicalBERT
+RBP score = 0.4416713018796457
+DCG score = 2.991795411969586
+AP score  = 0.4769026681312379
+##########################################################################################

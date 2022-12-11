@@ -80,7 +80,7 @@ def ap(ranking):
       score += ranking[i]/(k)
     return score
     
-  R = sum(ranking)
+  R = sum(ranking) if sum(ranking) > 0 else 1
 
   score = 0
   for k in range(len(ranking)):
@@ -145,7 +145,7 @@ def eval(qrels, query_file = "queries.txt", k = 100, reranking = True):
       rbp_scores.append(rbp(ranking))
       dcg_scores.append(dcg(ranking))
       ap_scores.append(ap(ranking))
-  print("Hasil evaluasi BM25 (k1 = 2, b = 0.75) terhadap 30 queries")
+  print(f"Hasil evaluasi BM25 (k1 = 2, b = 0.75, k = {k}) terhadap 30 queries")
   print("RBP score =", sum(rbp_scores) / len(rbp_scores))
   print("DCG score =", sum(dcg_scores) / len(dcg_scores))
   print("AP score  =", sum(ap_scores) / len(ap_scores))
@@ -182,7 +182,7 @@ def eval(qrels, query_file = "queries.txt", k = 100, reranking = True):
       dcg_scores.append(dcg(ranking))
       ap_scores.append(ap(ranking))
 
-    print("Hasil evaluasi reranking terhadap 30 queries")
+    print("Hasil evaluasi reranking dengan LAMBDARank")
     print("RBP score =", sum(rbp_scores) / len(rbp_scores))
     print("DCG score =", sum(dcg_scores) / len(dcg_scores))
     print("AP score  =", sum(ap_scores) / len(ap_scores))
@@ -194,4 +194,6 @@ if __name__ == '__main__':
   assert qrels["Q1"][166] == 1, "qrels salah"
   assert qrels["Q1"][300] == 0, "qrels salah"
 
-  eval(qrels)
+  for k in [5,10,50,100,500,1000]:
+    eval(qrels, k = k)
+    print("##############################")
